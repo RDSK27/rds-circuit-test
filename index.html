@@ -257,6 +257,7 @@ if('serviceWorker' in navigator){
   .cir-lights i{width:15px;height:15px;border-radius:50%;background:#360a08;box-shadow:inset 0 -2px 3px rgba(0,0,0,.6);}
   .cir-lights.red i{background:radial-gradient(circle at 35% 30%,#ff5b4a,#d61f10);box-shadow:0 0 7px rgba(230,40,20,.85);}
   .cir-lights.go  i{background:radial-gradient(circle at 35% 30%,#5bff87,#12b23c);box-shadow:0 0 8px rgba(20,200,70,.85);}
+  .cir-lights i.off{background:#360a08;box-shadow:inset 0 -2px 3px rgba(0,0,0,.6);}
   .cir-hint{position:absolute;left:0;right:0;bottom:9px;text-align:center;font-size:10px;font-weight:800;
     letter-spacing:0.08em;text-transform:uppercase;color:#888;}
 </style>
@@ -343,7 +344,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v2</div>
+    <div class="app-ver">v3</div>
     </div>
 
   </main>
@@ -505,9 +506,12 @@ function tone(type,f0,f1,start,dur,vol){
   o.start(start); o.stop(start+dur+0.03);
 }
 function sndButton(){ var c=audioCtx(); if(!c) return; tone('triangle',520,0,c.currentTime,0.055,0.16); }
+function cirSndBeep(){ var c=audioCtx(); if(!c) return; var t=c.currentTime;
+  tone('square',480,0,t,0.11,0.16); }
 function cirSndGo(){ var c=audioCtx(); if(!c) return; var t=c.currentTime;
-  tone('square',620,0,t,0.09,0.16); tone('square',620,0,t+0.13,0.09,0.16);
-  tone('sawtooth',480,1040,t+0.28,0.34,0.18); }
+  tone('sawtooth',520,1120,t,0.32,0.19); tone('square',1120,0,t+0.30,0.14,0.14); }
+function cirSndLap(){ var c=audioCtx(); if(!c) return; var t=c.currentTime;
+  tone('square',900,0,t,0.05,0.13); tone('square',1180,0,t+0.07,0.06,0.13); }
 function cirSndEnd(){ var c=audioCtx(); if(!c) return; var t=c.currentTime;
   tone('triangle',700,0,t,0.13,0.16); tone('triangle',560,0,t+0.16,0.14,0.16);
   tone('triangle',420,0,t+0.34,0.42,0.16); }
@@ -559,7 +563,7 @@ var CIR_WIDEN = 2.4;      /* ancho de pista respecto al dibujo (a afinar en devi
 var CIR_CARFRAC = 0.55;   /* radio del coche = fraccion del semiancho ensanchado   */
 var CIR_PEN_PER_U = 0.05; /* segundos de penalizacion por unidad de traza fuera de pista (a afinar en device) */
 var CIR = { code:'LEM', pts:[], hw:[], box:[1000,620], start:0, chk:[], trackW:0, carR:0, laps:3, modo:'nor',
-  armed:false, racing:false, done:false, t0:0, raf:0, falseStart:false,
+  armed:false, racing:false, timing:false, done:false, t0:0, raf:0, falseStart:false,
   trace:null, curPoly:null, wasOff:false, last:null, mmOff:0, offs:0,
   lap:0, lapT0:0, lapTimes:[], lapMm:0, lapMmArr:[], chkHit:[], curLapPolys:[], metaA:null, metaB:null, fwd:null, crossCd:0 };
 
@@ -611,20 +615,25 @@ function cirRender(){
 }
 function cirLights(){
   var el=$('cirLights'), h=$('cirHint');
-  if(el) el.className='cir-lights red';
-  if(h) h.textContent='Pon el dedo en la meta';
+  if(!el){ CIR.armed=true; return; }
+  el.className='cir-lights red';
+  el.innerHTML='<i></i><i></i><i></i><i></i><i></i>';
+  var L=el.querySelectorAll('i'), i;
+  if(h) h.textContent='Dedo en la meta';
+  setTimeout(function(){ if(L[0]){L[0].classList.add('off');L[1].classList.add('off');} cirSndBeep(); }, 1000);
+  setTimeout(function(){ if(L[2]){L[2].classList.add('off');L[3].classList.add('off');} cirSndBeep(); }, 1800);
   setTimeout(function(){
-    if(el) el.className='cir-lights go';
-    if(h) h.textContent='\u00a1Traza la vuelta!';
+    for(i=0;i<L.length;i++) L[i].classList.remove('off');
+    el.className='cir-lights go';
     cirSndGo();
-    CIR.armed=true; CIR.t0=(window.performance&&performance.now)?performance.now():Date.now();
-    cirTick();
-    setTimeout(function(){ if(el) el.className='cir-lights hidden'; }, 450);
-  }, 1400);
+    if(h) h.textContent='Cruza la meta y traza';
+    CIR.armed=true;
+    setTimeout(function(){ if(el) el.className='cir-lights hidden'; }, 800);
+  }, 2600);
 }
 function cirNow(){ return (window.performance&&performance.now)?performance.now():Date.now(); }
 function cirTick(){
-  if(!CIR.armed || CIR.done) return;
+  if(!CIR.timing || CIR.done) return;
   var e=$('cirTotT'); if(e) e.textContent=fmtTime(cirNow()-CIR.t0);
   if(CIR.racing){ var lv=$('cirLapT'); if(lv) lv.textContent=fmtTime(cirNow()-CIR.lapT0); }
   CIR.raf=(window.requestAnimationFrame||function(f){return setTimeout(f,16);})(cirTick);
@@ -639,6 +648,7 @@ function cirSegInt(p1,p2,q1,q2){
 }
 function cirAllChk(){ for(var i=0;i<CIR.chkHit.length;i++) if(!CIR.chkHit[i]) return false; return CIR.chkHit.length>0; }
 function cirLapDone(){
+  cirSndLap();
   var t=cirNow(), lt=t-CIR.lapT0;
   CIR.lapTimes.push(lt); CIR.lapMmArr.push(CIR.lapMm); CIR.lapMm=0;
   CIR.lapT0=t; CIR.crossCd=t; CIR.lap++;
@@ -656,11 +666,10 @@ function cirFinishRace(){
   cirSndEnd();
   if(CIR.raf){ (window.cancelAnimationFrame||clearTimeout)(CIR.raf); CIR.raf=0; }
   var laps=CIR.lapTimes.slice(), i;
-  var penFalse=CIR.falseStart?5:0;         /* segundos */
-  /* tiempo de cada vuelta CON las penalizaciones de esa vuelta (mm fuera + salida nula en la 1a) */
+  /* tiempo de cada vuelta CON las penalizaciones de esa vuelta (mm fuera de esa vuelta) */
   var lapFull=[], totalMs=0;
   for(i=0;i<laps.length;i++){
-    var lf=laps[i] + (CIR.lapMmArr[i]||0)*CIR_PEN_PER_U*1000 + (i===0?penFalse*1000:0);
+    var lf=laps[i] + (CIR.lapMmArr[i]||0)*CIR_PEN_PER_U*1000;
     lapFull.push(lf); totalMs+=lf;
   }
   var best=lapFull.length?Math.min.apply(null,lapFull):0;
@@ -722,17 +731,37 @@ function cirPush(x,y){
   CIR.curPoly.points.appendItem(p);
 }
 function cirRaceStart(loc){
-  CIR.racing=true; CIR.done=false; CIR.wasOff=false; CIR.mmOff=0; CIR.offs=0; CIR.last=loc;
-  CIR.lap=0; CIR.lapT0=CIR.t0||cirNow(); CIR.lapTimes=[]; CIR.lapMm=0; CIR.lapMmArr=[]; CIR.crossCd=cirNow();
+  CIR.racing=true; CIR.done=false; CIR.timing=false;
+  CIR.wasOff=false; CIR.mmOff=0; CIR.offs=0; CIR.last=loc;
+  CIR.lap=0; CIR.lapTimes=[]; CIR.lapMm=0; CIR.lapMmArr=[]; CIR.crossCd=cirNow();
   CIR.chkHit=[]; for(var i=0;i<CIR.chk.length;i++) CIR.chkHit.push(false);
-  CIR.curLapPolys=[];
+  CIR.curLapPolys=[]; CIR.curPoly=null;
   if(CIR.trace) CIR.trace.textContent='';
-  cirNewPoly(false); cirPush(loc.x,loc.y); cirCarTo(loc.x,loc.y);
+  cirCarTo(loc.x,loc.y);
   var e=$('cirOff'); if(e) e.textContent='0';
   var lp=$('cirLap'); if(lp) lp.textContent='1 / '+CIR.laps;
 }
 function cirRaceMove(loc){
   if(!CIR.last) { CIR.last=loc; return; }
+  /* antes del verde: el coche sigue al dedo, sin puntuar */
+  if(!CIR.armed){ cirCarTo(loc.x,loc.y); CIR.last=loc; return; }
+  /* verde pero aun sin cruzar meta: arranca crono+traza al primer cruce hacia delante */
+  if(!CIR.timing){
+    if(CIR.metaA && cirSegInt(CIR.last,loc,CIR.metaA,CIR.metaB) &&
+       ((loc.x-CIR.last.x)*CIR.fwd[0] + (loc.y-CIR.last.y)*CIR.fwd[1]) > 0){
+      var _t=cirNow();
+      CIR.timing=true; CIR.t0=_t; CIR.lapT0=_t; CIR.crossCd=_t;
+      CIR.mmOff=0; CIR.offs=0; CIR.lapMm=0; CIR.wasOff=false;
+      var _i; CIR.chkHit=[]; for(_i=0;_i<CIR.chk.length;_i++) CIR.chkHit.push(false);
+      if(CIR.trace) CIR.trace.textContent=''; CIR.curLapPolys=[];
+      cirNewPoly(false); cirPush(loc.x,loc.y);
+      var _eo=$('cirOff'); if(_eo) _eo.textContent='0';
+      var _lp=$('cirLap'); if(_lp) _lp.textContent='1 / '+CIR.laps;
+      var _h=$('cirHint'); if(_h) _h.textContent='';
+      cirSndLap(); cirTick();
+    }
+    cirCarTo(loc.x,loc.y); CIR.last=loc; return;
+  }
   var dxx=loc.x-CIR.last.x, dyy=loc.y-CIR.last.y;
   var step=Math.sqrt(dxx*dxx+dyy*dyy);
   if(step<1.4) { cirCarTo(loc.x,loc.y); return; }   /* dedup: no acumules puntos casi quietos */
@@ -757,7 +786,8 @@ function cirRaceMove(loc){
   CIR.wasOff=off; CIR.last=loc;
 }
 function cirRaceEnd(){
-  if(CIR.racing && !CIR.done) cirAbort('has soltado el dedo');
+  if(CIR.timing && !CIR.done) cirAbort('has soltado el dedo');
+  else CIR.racing=false;
 }
 function cirAbort(why){
   CIR.armed=false; CIR.racing=false; CIR.done=true;
@@ -772,11 +802,8 @@ function cirWire(){
     ev.preventDefault();
     try{ felt.setPointerCapture(ev.pointerId); }catch(e){}
     var loc=cirVB(ev); if(!loc) return;
-    if(!CIR.armed && !CIR.falseStart){
-      CIR.falseStart=true;
-      var h=$('cirHint'); if(h) h.textContent='\u00a1Salida nula! +5 s';
-    }
     if(!CIR.racing) cirRaceStart(loc);
+    else { CIR.last=loc; cirCarTo(loc.x,loc.y); }
   });
   felt.addEventListener('pointermove', function(ev){
     if(!CIR.racing) return;
@@ -794,7 +821,7 @@ function cirStart(){
   CIR.code='LEM';
   CIR.modo=S.s1||'nor';
   CIR.laps=parseInt(S.s3,10)||3;
-  CIR.armed=false; CIR.racing=false; CIR.done=false; CIR.falseStart=false;
+  CIR.armed=false; CIR.racing=false; CIR.timing=false; CIR.done=false; CIR.falseStart=false;
   CIR.mmOff=0; CIR.offs=0; CIR.wasOff=false; CIR.last=null; CIR.curPoly=null;
   CIR.lap=0; CIR.lapTimes=[]; CIR.lapMm=0; CIR.lapMmArr=[]; CIR.chkHit=[]; CIR.curLapPolys=[]; CIR.crossCd=0;
   audioCtx();
@@ -846,6 +873,8 @@ function renderChart(times){
     if(i===0||i===n-1||((i+1)%step)===0){
       s+='<text x="'+pts[i][0].toFixed(1)+'" y="'+(H-7)+'" text-anchor="middle" font-family="Arial" font-size="9" fill="#9A9A9A">'+(i+1)+'</text>';
     }
+    var _ly=pts[i][1]>(padT+11)?(pts[i][1]-5):(pts[i][1]+11);
+    s+='<text x="'+pts[i][0].toFixed(1)+'" y="'+_ly.toFixed(1)+'" text-anchor="middle" font-family="Arial" font-size="8.5" font-weight="bold" fill="#A23A29">'+(times[i]/1000).toFixed(1)+'</text>';
   }
   box.innerHTML=s+'</svg>';
 }
