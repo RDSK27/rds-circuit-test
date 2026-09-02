@@ -263,6 +263,14 @@ if('serviceWorker' in navigator){
   .cir-rec.on{background:#1769e0;border-color:#1769e0;color:#fff;}
   .cir-hint{position:absolute;left:0;right:0;bottom:9px;text-align:center;font-size:10px;font-weight:800;
     letter-spacing:0.08em;text-transform:uppercase;color:#888;}
+.cir-over{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:rgba(18,18,18,.62);z-index:5;padding:22px;}
+.cir-over-box{background:#fff;border-radius:14px;border:2px solid #E63329;padding:18px 20px;
+    max-width:82%;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.42);}
+.cir-over-t{font-size:14px;font-weight:900;color:#E63329;text-transform:uppercase;letter-spacing:0.04em;}
+.cir-over-r{margin-top:8px;font-size:10.5px;font-weight:800;color:#555;text-transform:uppercase;
+    letter-spacing:0.06em;line-height:1.5;}
+.cir-over-s{margin-top:13px;font-size:9px;font-weight:800;color:#999;text-transform:uppercase;letter-spacing:0.12em;}
 </style>
 </head>
 <body class="home-active">
@@ -347,7 +355,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v7</div>
+    <div class="app-ver">v8</div>
     </div>
 
   </main>
@@ -371,6 +379,7 @@ if('serviceWorker' in navigator){
       <div class="cir-lights hidden" id="cirLights"><i></i><i></i><i></i><i></i><i></i></div>
       <div class="cir-hint" id="cirHint">Pon el dedo en la meta</div>
       <button class="cir-rec" id="cirRec" onclick="cirToggleGhost()">R&#233;cord</button>
+      <div class="cir-over hidden" id="cirOver"><div class="cir-over-box"><div class="cir-over-t">Fuera de pista</div><div class="cir-over-r" id="cirOverR"></div><div class="cir-over-s">Toca para volver</div></div></div>
     </div>
   <div class="results-actions">
     <button class="game-ctrl-btn" onclick="goHome()">&#8592; Inicio</button>
@@ -570,7 +579,7 @@ var CIR = { code:'LEM', pts:[], hw:[], box:[1000,620], start:0, chk:[], trackW:0
   trace:null, curPoly:null, wasOff:false, last:null, mmOff:0, offs:0,
   lap:0, lapT0:0, lapTimes:[], lapMm:0, lapMmArr:[], chkHit:[], curLapPolys:[], metaA:null, metaB:null, fwd:null, crossCd:0,
   lapOffs:0, lapPathPts:[], bestLapPath:null, bestLapFull:Infinity, ghostOn:false, ghostG:null, _ghostPath:null,
-  obstG:null, obst:[], carIdx:0, reactRTs:[], lapHits:[], waitingResume:null };
+  obstG:null, obst:[], carIdx:0, reactRTs:[], lapHits:[], waitingResume:null, pid:null };
 
 /* colocacion B: gira -90 alrededor del centro de la caja del circuito */
 function cirTransform(src){
@@ -917,7 +926,7 @@ function cirRaceMove(loc){
   if(off && !CIR.wasOff){
     CIR.offs++; var eo=$('cirOff'); if(eo) eo.textContent=CIR.offs;
     CIR.lapOffs++;
-    if(CIR.modo==='lim' && CIR.lapOffs>=2){ cirCarTo(loc.x,loc.y); CIR.last=loc; cirAbort('l\u00edmite: 2\u00aa salida'); return; }
+    if(CIR.modo==='lim' && CIR.lapOffs>=2){ cirCarTo(loc.x,loc.y); CIR.last=loc; cirLimOut(); return; }
   }
   if(off !== CIR.wasOff){ cirNewPoly(off); cirPush(CIR.last.x,CIR.last.y); }
   if(off){ CIR.mmOff += step; CIR.lapMm += step; }
@@ -950,35 +959,52 @@ function cirRaceEnd(){
   cirAbort('has soltado el dedo');
 }
 function cirAbort(why){
-  CIR.armed=false; CIR.racing=false; CIR.done=true;
+  CIR.armed=false; CIR.racing=false; CIR.done=true; CIR.pid=null;
   cirSndAbort();
   var h=$('cirHint'); if(h) h.textContent='PARTIDA ANULADA'+(why?' ('+why+')':'');
   setTimeout(function(){ goHome(); }, 900);
+}
+function cirLimOut(){
+  CIR.armed=false; CIR.racing=false; CIR.done=true; CIR.pid=null;
+  cirSndAbort();
+  var h=$('cirHint'); if(h) h.textContent='';
+  var r=$('cirOverR'); if(r) r.innerHTML='2\u00aa salida en la misma vuelta<br>fin de la partida';
+  var o=$('cirOver'); if(o){
+    o.classList.remove('hidden');
+    var go=function(ev){ if(ev) ev.stopPropagation(); o.classList.add('hidden'); o.removeEventListener('pointerdown', go); goHome(); };
+    o.addEventListener('pointerdown', go);
+  }
 }
 function cirWire(){
   var felt=$('cirFelt'); if(!felt || felt.__cw) return; felt.__cw=1;
   felt.addEventListener('pointerdown', function(ev){
     if(CIR.done) return;
     ev.preventDefault();
-    try{ felt.setPointerCapture(ev.pointerId); }catch(e){}
     var loc=cirVB(ev); if(!loc) return;
     if(CIR.waitingResume){
+      /* al retomar tras levantar el dedo (Extremo), el dedo nuevo pasa a ser el que cuenta */
       var _ob=CIR.waitingResume, _n=CIR.pts.length, _ri=cirNear(loc.x,loc.y).i;
+      CIR.pid=ev.pointerId; try{ felt.setPointerCapture(ev.pointerId); }catch(e){}
       if(cirAheadIdx(_ri, _ob.ci, _n) <= 1){   /* el dedo baja pasada la raya */
         _ob.done=true; CIR.waitingResume=null; cirObstGzGone(_ob);
         CIR.last=loc; CIR.carIdx=_ri; cirCarTo(loc.x,loc.y);
       } else { CIR.last=loc; cirCarTo(loc.x,loc.y); }  /* antes de la raya: sigue esperando */
       return;
     }
-    if(!CIR.racing) cirRaceStart(loc);
-    else { CIR.last=loc; cirCarTo(loc.x,loc.y); }
+    if(!CIR.racing){
+      CIR.pid=ev.pointerId; try{ felt.setPointerCapture(ev.pointerId); }catch(e){}
+      cirRaceStart(loc);
+    } else if(ev.pointerId===CIR.pid){
+      CIR.last=loc; cirCarTo(loc.x,loc.y);
+    }
+    /* cualquier otro dedo mientras corres: se ignora */
   });
   felt.addEventListener('pointermove', function(ev){
-    if(!CIR.racing) return;
+    if(!CIR.racing || ev.pointerId!==CIR.pid) return;
     ev.preventDefault();
     var loc=cirVB(ev); if(loc) cirRaceMove(loc);
   });
-  function up(ev){ if(CIR.racing){ ev.preventDefault(); cirRaceEnd(); } }
+  function up(ev){ if(CIR.racing && ev.pointerId===CIR.pid){ ev.preventDefault(); cirRaceEnd(); } }
   felt.addEventListener('pointerup', up);
   felt.addEventListener('pointercancel', up);
 }
@@ -993,7 +1019,8 @@ function cirStart(){
   CIR.mmOff=0; CIR.offs=0; CIR.wasOff=false; CIR.last=null; CIR.curPoly=null;
   CIR.lap=0; CIR.lapTimes=[]; CIR.lapMm=0; CIR.lapMmArr=[]; CIR.chkHit=[]; CIR.curLapPolys=[]; CIR.crossCd=0;
   CIR.lapOffs=0; CIR.lapPathPts=[]; CIR.bestLapPath=null; CIR.bestLapFull=Infinity;
-  CIR.reactRTs=[]; CIR.lapHits=[]; CIR.waitingResume=null; CIR.carIdx=0;
+  CIR.reactRTs=[]; CIR.lapHits=[]; CIR.waitingResume=null; CIR.carIdx=0; CIR.pid=null;
+  var _ov=$('cirOver'); if(_ov) _ov.classList.add('hidden');
   audioCtx();
   if(CIR.raf){ (window.cancelAnimationFrame||clearTimeout)(CIR.raf); CIR.raf=0; }
   var e;
