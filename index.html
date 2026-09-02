@@ -210,7 +210,7 @@ if('serviceWorker' in navigator){
   .rank-full-ms { font-size:0.72rem; font-weight:900; color:#b03020; }
   .rank-full-date { font-size:0.5rem; color:#555; }
   .rank-full-empty { text-align:center; padding:24px; font-size:0.62rem; color:#ccc; letter-spacing:0.1em; }
-  #seg1R,#seg2R,#seg3R{margin-bottom:4px;}
+  #seg1R,#seg2R,#seg3R{margin:6px 0 4px;} #seg1R{margin-top:9px;}
   #rkList{margin-top:10px;}
   .res-quad{width:100%;height:clamp(200px,27svh,238px);display:grid;grid-template-columns:1.28fr 1fr;grid-template-rows:1.62fr 1fr;}
   .rq{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px 8px;gap:2px;min-width:0;min-height:0;}
@@ -344,7 +344,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v3</div>
+    <div class="app-ver">v4</div>
     </div>
 
   </main>
@@ -425,21 +425,19 @@ if('serviceWorker' in navigator){
   <section id="ranking" class="screen">
     <div class="rank-body">
       <div class="rank-screen-title">Ranking completo</div>
-      <div class="rank-seg-label">Modo</div>
       <div class="rank-tabs" id="seg1R">
         <button class="rank-tab" data-v="nor">NORMAL</button>
         <button class="rank-tab" data-v="ext">EXTREMO</button>
         <button class="rank-tab" data-v="lim">LÍMITE</button>
       </div>
-      <div class="rank-seg-label">Circuito</div>
       <div class="rank-tabs" id="seg2R">
         <button class="rank-tab" data-v="lem">LEM</button>
       </div>
-      <div class="rank-seg-label">Vueltas</div>
       <div class="rank-tabs" id="seg3R">
-        <button class="rank-tab" data-v="3">3</button>
-        <button class="rank-tab" data-v="5">5</button>
-        <button class="rank-tab" data-v="10">10</button>
+        <button class="rank-tab" data-v="1">1V</button>
+        <button class="rank-tab sel" data-v="3">3V</button>
+        <button class="rank-tab" data-v="5">5V</button>
+        <button class="rank-tab" data-v="10">10V</button>
       </div>
       <div id="rkList" class="rank-full-list"></div>
     </div>
@@ -945,7 +943,7 @@ function getHomeName(){
   return sport ? (nm+'-'+sport) : nm;
 }
 
-function renderRankList(list, el, latest){
+function renderRankList(list, el, latest, lapMode){
   list=filterRepeated(list);
   function rankBetter(a,b){
     if(a==null) return false; if(b==null) return true;
@@ -974,7 +972,7 @@ function renderRankList(list, el, latest){
     pos.textContent=posLabel;
     var nm=document.createElement('div');nm.className='rank-full-name';nm.textContent=entry.name;
     var ms=document.createElement('div');ms.className='rank-full-ms';
-    ms.textContent=fmtMSD((+entry.avg)*1000);
+    ms.textContent = lapMode ? (+entry.avg).toFixed(3) : fmtMSD((+entry.avg)*1000);
     var dt=document.createElement('div');dt.className='rank-full-date';dt.textContent=entry.ts?fmtDate(entry.ts):'';
     row.appendChild(pos);row.appendChild(nm);row.appendChild(ms);row.appendChild(dt);
     return row;
@@ -1034,23 +1032,36 @@ function showRanking(){
   setSeg('seg1R',v1); setSeg('seg2R',v2); setSeg('seg3R',v3);
   renderRank(v1,v2,v3); show('ranking');
 }
+function cirRemapLap(e){ return { name:e.name, avg:(e.bestLap||0)/1000, ts:e.ts, ensayos:e.ensayos, s1:e.s1, s2:e.s2 }; }
+function cirLapLocal(v1,v2){
+  var out=[], L=['3','5','10'], i, j, arr;
+  for(i=0;i<L.length;i++){ arr=loadLb('rds_circ_'+v1+'_'+v2+'_'+L[i]); for(j=0;j<arr.length;j++) out.push(arr[j]); }
+  return out;
+}
 function renderRank(v1,v2,v3){
-  var key=lbKey(v1,v2,v3); S.rankKey=key;
+  var lapMode=(v3==='1');
+  var key=lapMode ? ('rds_circ_'+v1+'_'+v2+'_best') : lbKey(v1,v2,v3);
+  S.rankKey=key;
   var el=$('rkList'); if(!el) return;
   var latest=null;
-  if(S.saved===false && isFinite(S.resAvg) && lbKey(S.s1,S.s2,S.s3)===key){
-    latest={ name:(S.sport?(S.name+'-'+S.sport):S.name), avg:Math.round(S.resAvg*100)/100, ensayos:S.resEnsayos, ts:Date.now() };
-  } else if(S.lastRec && S.lastRecKey===key){
-    latest=S.lastRec;
+  if(lapMode){
+    if(S.lastRec && S.lastRec.s1===v1 && S.lastRec.s2===v2 && (S.lastRec.bestLap||0)>0) latest=cirRemapLap(S.lastRec);
+  } else {
+    if(S.saved===false && isFinite(S.resAvg) && lbKey(S.s1,S.s2,S.s3)===key){
+      latest={ name:(S.sport?(S.name+'-'+S.sport):S.name), avg:Math.round(S.resAvg*100)/100, ensayos:S.resEnsayos, ts:Date.now() };
+    } else if(S.lastRec && S.lastRecKey===key){
+      latest=S.lastRec;
+    }
   }
-  var lbLocal=loadLb(key);
+  var lbLocal = lapMode ? cirLapLocal(v1,v2).map(cirRemapLap) : loadLb(key);
   sortLb(lbLocal);
-  renderRankList(lbLocal, el, latest);
+  renderRankList(lbLocal, el, latest, lapMode);
   if(window.fbLoad){
     window.fbLoad(v1,v2,v3).then(function(rows){
       if(rows && S.rankKey===key){
+        if(lapMode) rows=rows.map(cirRemapLap);
         sortLb(rows);
-        renderRankList(rows, el, latest);
+        renderRankList(rows, el, latest, lapMode);
       }
     }).catch(function(){});
   }
@@ -1124,7 +1135,9 @@ window.fbSave=async function(rec){
 window.fbLoad=async function(s1,s2,s3){
   if(!db) return null;
   try{
-    const q=query(collection(db,'scores_circuit'), where('s1','==',s1), where('s2','==',s2), where('s3','==',s3));
+    let q;
+    if(s3==='1') q=query(collection(db,'scores_circuit'), where('s1','==',s1), where('s2','==',s2));
+    else q=query(collection(db,'scores_circuit'), where('s1','==',s1), where('s2','==',s2), where('s3','==',s3));
     const snap=await getDocs(q);
     const out=[]; snap.forEach(function(d){ out.push(d.data()); });
     return out;
