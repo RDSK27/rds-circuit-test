@@ -358,7 +358,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v13</div>
+    <div class="app-ver">v14</div>
     </div>
 
   </main>
@@ -609,6 +609,12 @@ function cirBuild(){
   CIR.hw =T.pts.map(function(p){ return p[2]*sc; });
   CIR.trackW=T.ahw*2*CIR_WIDEN*sc;
   CIR.carR  =T.ahw*CIR_WIDEN*CIR_CARFRAC*sc;
+  if(src.pre){                                  /* mismo ancho en pantalla que Le Mans */
+    CIR.trackW=VBH*0.0354;
+    var _hw=CIR.trackW/(2*CIR_WIDEN);
+    CIR.hw=CIR.pts.map(function(){ return _hw; });
+    CIR.carR=_hw*CIR_WIDEN*CIR_CARFRAC;
+  }
   CIR.start=T.start; CIR.chk=T.chk;
 }
 function cirPathD(){
