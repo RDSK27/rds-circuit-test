@@ -343,7 +343,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v1</div>
+    <div class="app-ver">v2</div>
     </div>
 
   </main>
@@ -478,6 +478,7 @@ function show(id){
   document.body.classList.toggle('home-active', id==='home');
 }
 function two(n){ return (n<10?'0':'')+n; }
+function fmtMSD(ms){ var s=Math.floor(ms/1000), m=Math.floor(s/60), ss=s%60, d=Math.floor((ms%1000)/100); return m+':'+two(ss)+'.'+d; }
 function fmtTime(ms){ var cs=Math.floor(ms/10), cc=cs%100, s=Math.floor(cs/100), sec=s%60, m=Math.floor(s/60); return m+':'+two(sec)+'.'+two(cc); }
 function fmtDate(ts){ if(!ts) return ''; var d=new Date(ts); return two(d.getDate())+'/'+two(d.getMonth()+1); }
 function fmtRT(ms){ return (ms/1000).toFixed(2); }
@@ -504,6 +505,14 @@ function tone(type,f0,f1,start,dur,vol){
   o.start(start); o.stop(start+dur+0.03);
 }
 function sndButton(){ var c=audioCtx(); if(!c) return; tone('triangle',520,0,c.currentTime,0.055,0.16); }
+function cirSndGo(){ var c=audioCtx(); if(!c) return; var t=c.currentTime;
+  tone('square',620,0,t,0.09,0.16); tone('square',620,0,t+0.13,0.09,0.16);
+  tone('sawtooth',480,1040,t+0.28,0.34,0.18); }
+function cirSndEnd(){ var c=audioCtx(); if(!c) return; var t=c.currentTime;
+  tone('triangle',700,0,t,0.13,0.16); tone('triangle',560,0,t+0.16,0.14,0.16);
+  tone('triangle',420,0,t+0.34,0.42,0.16); }
+function cirSndAbort(){ var c=audioCtx(); if(!c) return; var t=c.currentTime;
+  tone('square',200,150,t,0.35,0.16); }
 
 /* ---------- Selectores segmentados ---------- */
 function seg(id){
@@ -548,11 +557,11 @@ function runGame(){
 var CIR_DATA = { "LEM": {"code":"LEM","box":[1000,439],"start":0,"checkpoints":[9,18,25,37,44,49,59],"avgHalfWidth":7.3,"pts":[[244.5,160.3,7.3],[278.3,139.4,7.3],[312.1,118.4,7.3],[346,97.5,7.3],[379.8,76.6,7.3],[413.6,55.6,7.3],[457,39.2,7.3],[497.9,30.7,7.3],[541.9,29.3,7.3],[566.5,32.3,7.3],[587.4,37.4,7.3],[619.7,50.3,7.3],[645.2,72.2,7.3],[655.6,76.9,7.3],[666.9,76.2,7.3],[685.6,69.1,7.3],[699.9,70.9,7.2],[716.8,79.4,7.2],[928.5,211.1,7.2],[940.8,223.4,7.2],[942.8,237.3,7.2],[938.1,247.7,7.3],[930.5,254.4,7.3],[920.9,257.1,7.3],[909.6,255.9,7.3],[687.2,171.3,7.3],[670.3,168.1,7.3],[660.4,169.7,7.3],[652.9,173.9,7.3],[646.6,181.9,7.3],[643.2,192.8,7.3],[642.8,204.2,7.3],[645.6,218.3,7.3],[651.5,231.6,7.3],[659.1,242.3,7.3],[680.9,259.4,7.3],[709.6,269.6,7.3],[911.6,292.4,7.3],[923,298.4,7.3],[929.1,306.3,7.3],[931.4,317.5,7.3],[929.5,330,7.3],[919.9,340.4,7.3],[906.1,343.4,7.3],[534.5,308.7,7.3],[485.1,305.8,7.3],[474.2,309.4,7.3],[465.1,316.7,7.3],[450,347.9,7.3],[436.8,358.6,7.3],[265.1,408.3,7.3],[252.3,410.2,7.3],[239.7,408.7,7.3],[230.2,402.5,7.3],[224.8,392.4,7.3],[222.4,320.6,7.3],[218.4,309.9,7.3],[210.3,301.6,7.3],[194.2,295.7,7.3],[169.6,296.6,7.3],[86.1,324.8,7.3],[77.7,325.6,7.3],[68.7,321.6,7.3],[61.2,311,7.3],[57.3,300.1,7.3],[57.5,287.2,7.3],[63.4,275.7,7.3],[75.3,265,7.2],[109.1,244,7.3],[143,223.1,7.3],[176.8,202.2,7.3],[210.6,181.2,7.3]]} };
 var CIR_WIDEN = 2.4;      /* ancho de pista respecto al dibujo (a afinar en device) */
 var CIR_CARFRAC = 0.55;   /* radio del coche = fraccion del semiancho ensanchado   */
-var CIR_PEN_PER_U = 1;    /* segundos de penalizacion por "mm" (unidad virtual) fuera  */
+var CIR_PEN_PER_U = 0.05; /* segundos de penalizacion por unidad de traza fuera de pista (a afinar en device) */
 var CIR = { code:'LEM', pts:[], hw:[], box:[1000,620], start:0, chk:[], trackW:0, carR:0, laps:3, modo:'nor',
   armed:false, racing:false, done:false, t0:0, raf:0, falseStart:false,
   trace:null, curPoly:null, wasOff:false, last:null, mmOff:0, offs:0,
-  lap:0, lapT0:0, lapTimes:[], chkHit:[], curLapPolys:[], metaA:null, metaB:null, fwd:null, crossCd:0 };
+  lap:0, lapT0:0, lapTimes:[], lapMm:0, lapMmArr:[], chkHit:[], curLapPolys:[], metaA:null, metaB:null, fwd:null, crossCd:0 };
 
 /* colocacion B: gira -90 alrededor del centro de la caja del circuito */
 function cirTransform(src){
@@ -607,6 +616,7 @@ function cirLights(){
   setTimeout(function(){
     if(el) el.className='cir-lights go';
     if(h) h.textContent='\u00a1Traza la vuelta!';
+    cirSndGo();
     CIR.armed=true; CIR.t0=(window.performance&&performance.now)?performance.now():Date.now();
     cirTick();
     setTimeout(function(){ if(el) el.className='cir-lights hidden'; }, 450);
@@ -630,7 +640,8 @@ function cirSegInt(p1,p2,q1,q2){
 function cirAllChk(){ for(var i=0;i<CIR.chkHit.length;i++) if(!CIR.chkHit[i]) return false; return CIR.chkHit.length>0; }
 function cirLapDone(){
   var t=cirNow(), lt=t-CIR.lapT0;
-  CIR.lapTimes.push(lt); CIR.lapT0=t; CIR.crossCd=t; CIR.lap++;
+  CIR.lapTimes.push(lt); CIR.lapMmArr.push(CIR.lapMm); CIR.lapMm=0;
+  CIR.lapT0=t; CIR.crossCd=t; CIR.lap++;
   var i, pl;
   for(i=0;i<CIR.curLapPolys.length;i++){ pl=CIR.curLapPolys[i]; pl.setAttribute('stroke','#d2d2d2'); }
   CIR.curLapPolys=[];
@@ -642,31 +653,28 @@ function cirLapDone(){
 }
 function cirFinishRace(){
   CIR.done=true; CIR.racing=false; CIR.armed=false;
+  cirSndEnd();
   if(CIR.raf){ (window.cancelAnimationFrame||clearTimeout)(CIR.raf); CIR.raf=0; }
-  var laps=CIR.lapTimes.slice(), i, sumLaps=0;
-  for(i=0;i<laps.length;i++) sumLaps+=laps[i];
-  var best=laps.length?Math.min.apply(null,laps):0;
-  var penOff=CIR.mmOff*CIR_PEN_PER_U;      /* segundos */
+  var laps=CIR.lapTimes.slice(), i;
   var penFalse=CIR.falseStart?5:0;         /* segundos */
-  var totalMs=sumLaps + (penOff+penFalse)*1000;
+  /* tiempo de cada vuelta CON las penalizaciones de esa vuelta (mm fuera + salida nula en la 1a) */
+  var lapFull=[], totalMs=0;
+  for(i=0;i<laps.length;i++){
+    var lf=laps[i] + (CIR.lapMmArr[i]||0)*CIR_PEN_PER_U*1000 + (i===0?penFalse*1000:0);
+    lapFull.push(lf); totalMs+=lf;
+  }
+  var best=lapFull.length?Math.min.apply(null,lapFull):0;
+  var penOff=CIR.mmOff*CIR_PEN_PER_U;      /* segundos (total, para el desglose) */
   var totalSec=totalMs/1000;
   var e;
-  var _ts=Math.floor(totalMs/1000), _tm=Math.floor(_ts/60), _tss=_ts%60, _td=Math.floor((totalMs%1000)/100);
-  e=$('rV1'); if(e) e.textContent=_tm+':'+two(_tss)+'.'+_td;
+  e=$('rV1'); if(e) e.textContent=fmtMSD(totalMs);
   e=$('rV2'); if(e) e.textContent=(best/1000).toFixed(3);
   e=$('rV3'); if(e) e.textContent=String(CIR.offs);
   e=$('rV4'); if(e) e.textContent=penOff.toFixed(1);
   e=$('resEns'); if(e) e.style.display='none';
-  var msg=$('resMsg');
-  if(msg){
-    var parts=[];
-    if(CIR.offs) parts.push(CIR.offs+' salida'+(CIR.offs>1?'s':'')+' (+'+penOff.toFixed(1)+' s)');
-    if(penFalse) parts.push('salida nula (+5 s)');
-    if(parts.length){ msg.textContent='penalizaci\u00f3n: '+parts.join('  \u00b7  '); msg.style.display='block'; }
-    else { msg.style.display='none'; }
-  }
-  renderChart(laps);
-  S.times=laps; S.t0=CIR.t0;
+  var msg=$('resMsg'); if(msg) msg.style.display='none';
+  renderChart(lapFull);
+  S.times=lapFull; S.t0=CIR.t0;
   S.resAvg=totalSec;                 /* metrica del ranking (segundos) */
   S.resTotal=totalMs;
   S.resEnsayos=CIR.laps;
@@ -715,7 +723,7 @@ function cirPush(x,y){
 }
 function cirRaceStart(loc){
   CIR.racing=true; CIR.done=false; CIR.wasOff=false; CIR.mmOff=0; CIR.offs=0; CIR.last=loc;
-  CIR.lap=0; CIR.lapT0=CIR.t0||cirNow(); CIR.lapTimes=[]; CIR.crossCd=cirNow();
+  CIR.lap=0; CIR.lapT0=CIR.t0||cirNow(); CIR.lapTimes=[]; CIR.lapMm=0; CIR.lapMmArr=[]; CIR.crossCd=cirNow();
   CIR.chkHit=[]; for(var i=0;i<CIR.chk.length;i++) CIR.chkHit.push(false);
   CIR.curLapPolys=[];
   if(CIR.trace) CIR.trace.textContent='';
@@ -732,7 +740,7 @@ function cirRaceMove(loc){
   var off=(r.d - r.hw) > CIR.carR;                  /* el circulo entero fuera de la pista */
   if(off && !CIR.wasOff){ CIR.offs++; var eo=$('cirOff'); if(eo) eo.textContent=CIR.offs; }
   if(off !== CIR.wasOff){ cirNewPoly(off); cirPush(CIR.last.x,CIR.last.y); }
-  if(off){ CIR.mmOff += step; }
+  if(off){ CIR.mmOff += step; CIR.lapMm += step; }
   /* checkpoints: marca los que el coche roza */
   for(var k=0;k<CIR.chk.length;k++){ if(CIR.chkHit[k]) continue;
     var cp=CIR.pts[CIR.chk[k]], ddx=loc.x-cp[0], ddy=loc.y-cp[1];
@@ -753,6 +761,7 @@ function cirRaceEnd(){
 }
 function cirAbort(why){
   CIR.armed=false; CIR.racing=false; CIR.done=true;
+  cirSndAbort();
   var h=$('cirHint'); if(h) h.textContent='PARTIDA ANULADA'+(why?' ('+why+')':'');
   setTimeout(function(){ goHome(); }, 900);
 }
@@ -787,7 +796,8 @@ function cirStart(){
   CIR.laps=parseInt(S.s3,10)||3;
   CIR.armed=false; CIR.racing=false; CIR.done=false; CIR.falseStart=false;
   CIR.mmOff=0; CIR.offs=0; CIR.wasOff=false; CIR.last=null; CIR.curPoly=null;
-  CIR.lap=0; CIR.lapTimes=[]; CIR.chkHit=[]; CIR.curLapPolys=[]; CIR.crossCd=0;
+  CIR.lap=0; CIR.lapTimes=[]; CIR.lapMm=0; CIR.lapMmArr=[]; CIR.chkHit=[]; CIR.curLapPolys=[]; CIR.crossCd=0;
+  audioCtx();
   if(CIR.raf){ (window.cancelAnimationFrame||clearTimeout)(CIR.raf); CIR.raf=0; }
   var e;
   e=$('cirLap');  if(e) e.textContent='1 / '+CIR.laps;
@@ -935,7 +945,7 @@ function renderRankList(list, el, latest){
     pos.textContent=posLabel;
     var nm=document.createElement('div');nm.className='rank-full-name';nm.textContent=entry.name;
     var ms=document.createElement('div');ms.className='rank-full-ms';
-    ms.textContent=(+entry.avg).toFixed(2)+' '+UNIDAD;
+    ms.textContent=fmtMSD((+entry.avg)*1000);
     var dt=document.createElement('div');dt.className='rank-full-date';dt.textContent=entry.ts?fmtDate(entry.ts):'';
     row.appendChild(pos);row.appendChild(nm);row.appendChild(ms);row.appendChild(dt);
     return row;
