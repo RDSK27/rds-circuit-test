@@ -258,6 +258,9 @@ if('serviceWorker' in navigator){
   .cir-lights.red i{background:radial-gradient(circle at 35% 30%,#ff5b4a,#d61f10);box-shadow:0 0 7px rgba(230,40,20,.85);}
   .cir-lights.go  i{background:radial-gradient(circle at 35% 30%,#5bff87,#12b23c);box-shadow:0 0 8px rgba(20,200,70,.85);}
   .cir-lights i.off{background:#360a08;box-shadow:inset 0 -2px 3px rgba(0,0,0,.6);}
+  .cir-rec{position:absolute;top:7px;right:7px;font-family:inherit;font-size:9.5px;font-weight:800;letter-spacing:0.06em;
+    text-transform:uppercase;padding:4px 9px;background:#f2f2f2;border:1.5px solid #bbb;border-radius:5px;color:#666;cursor:pointer;}
+  .cir-rec.on{background:#1769e0;border-color:#1769e0;color:#fff;}
   .cir-hint{position:absolute;left:0;right:0;bottom:9px;text-align:center;font-size:10px;font-weight:800;
     letter-spacing:0.08em;text-transform:uppercase;color:#888;}
 </style>
@@ -344,7 +347,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v4</div>
+    <div class="app-ver">v5</div>
     </div>
 
   </main>
@@ -367,6 +370,7 @@ if('serviceWorker' in navigator){
       <svg class="cir-svg" id="cirSvg" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet"></svg>
       <div class="cir-lights hidden" id="cirLights"><i></i><i></i><i></i><i></i><i></i></div>
       <div class="cir-hint" id="cirHint">Pon el dedo en la meta</div>
+      <button class="cir-rec" id="cirRec" onclick="cirToggleGhost()">R&#233;cord</button>
     </div>
   <div class="results-actions">
     <button class="game-ctrl-btn" onclick="goHome()">&#8592; Inicio</button>
@@ -563,7 +567,8 @@ var CIR_PEN_PER_U = 0.05; /* segundos de penalizacion por unidad de traza fuera 
 var CIR = { code:'LEM', pts:[], hw:[], box:[1000,620], start:0, chk:[], trackW:0, carR:0, laps:3, modo:'nor',
   armed:false, racing:false, timing:false, done:false, t0:0, raf:0, falseStart:false,
   trace:null, curPoly:null, wasOff:false, last:null, mmOff:0, offs:0,
-  lap:0, lapT0:0, lapTimes:[], lapMm:0, lapMmArr:[], chkHit:[], curLapPolys:[], metaA:null, metaB:null, fwd:null, crossCd:0 };
+  lap:0, lapT0:0, lapTimes:[], lapMm:0, lapMmArr:[], chkHit:[], curLapPolys:[], metaA:null, metaB:null, fwd:null, crossCd:0,
+  lapOffs:0, lapPathPts:[], bestLapPath:null, bestLapFull:Infinity, ghostOn:false, ghostG:null, _ghostPath:null };
 
 /* colocacion B: gira -90 alrededor del centro de la caja del circuito */
 function cirTransform(src){
@@ -606,9 +611,12 @@ function cirRender(){
     '<path d="'+d+'" fill="none" stroke="#9a9a9a" stroke-width="1" stroke-dasharray="3 6"/>'+
     chk+
     '<line x1="'+(a[0]-nx*mw).toFixed(1)+'" y1="'+(a[1]-ny*mw).toFixed(1)+'" x2="'+(a[0]+nx*mw).toFixed(1)+'" y2="'+(a[1]+ny*mw).toFixed(1)+'" stroke="#e63329" stroke-width="4"/>'+
+    '<g id="cirGhost"></g>'+
     '<g id="cirTrace"></g>'+
     '<circle id="cirCar" cx="'+a[0]+'" cy="'+a[1]+'" r="'+CIR.carR.toFixed(1)+'" fill="#e63329" stroke="#111" stroke-width="1.6"/>';
   CIR.trace=svg.querySelector('#cirTrace');
+  CIR.ghostG=svg.querySelector('#cirGhost');
+  if(CIR.ghostOn && CIR._ghostPath) cirDrawGhost(CIR._ghostPath);
   CIR.metaA=[a[0]-nx*mw, a[1]-ny*mw]; CIR.metaB=[a[0]+nx*mw, a[1]+ny*mw]; CIR.fwd=[dx,dy];
 }
 function cirLights(){
@@ -645,10 +653,64 @@ function cirSegInt(p1,p2,q1,q2){
   return s>=0 && s<=1 && u>=0 && u<=1;
 }
 function cirAllChk(){ for(var i=0;i<CIR.chkHit.length;i++) if(!CIR.chkHit[i]) return false; return CIR.chkHit.length>0; }
+function cirRDP(P, eps){
+  if(P.length<3) return P.slice();
+  var keep=new Array(P.length); keep[0]=keep[P.length-1]=true;
+  var st=[[0,P.length-1]];
+  while(st.length){
+    var sg=st.pop(), i=sg[0], j=sg[1], md=-1, mk=-1;
+    var ax=P[i][0], ay=P[i][1], ex=P[j][0]-ax, ey=P[j][1]-ay, L2=ex*ex+ey*ey||1;
+    for(var k=i+1;k<j;k++){
+      var t=((P[k][0]-ax)*ex+(P[k][1]-ay)*ey)/L2;
+      var cx=ax+t*ex, cy=ay+t*ey;
+      var d=Math.sqrt((P[k][0]-cx)*(P[k][0]-cx)+(P[k][1]-cy)*(P[k][1]-cy));
+      if(d>md){ md=d; mk=k; }
+    }
+    if(md>eps){ keep[mk]=true; st.push([i,mk],[mk,j]); }
+  }
+  var out=[]; for(var m=0;m<P.length;m++) if(keep[m]) out.push(P[m]);
+  return out;
+}
+function cirFlatPath(P){ var f=[]; for(var i=0;i<P.length;i++){ f.push(Math.round(P[i][0]), Math.round(P[i][1])); } return f; }
+function cirDrawGhost(flat){
+  var g=CIR.ghostG||$('cirGhost'); if(!g||!flat||!flat.length) return;
+  g.textContent='';
+  var pl=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+  pl.setAttribute('fill','none'); pl.setAttribute('stroke','#1769e0');
+  pl.setAttribute('stroke-width',((CIR.trackW||30)*0.22).toFixed(1));
+  pl.setAttribute('stroke-linecap','round'); pl.setAttribute('stroke-linejoin','round');
+  pl.setAttribute('opacity','0.9');
+  var pts=''; for(var i=0;i+1<flat.length;i+=2) pts+=(i?' ':'')+flat[i]+','+flat[i+1];
+  pl.setAttribute('points',pts); g.appendChild(pl);
+}
+function cirClearGhost(){ var g=CIR.ghostG||$('cirGhost'); if(g) g.textContent=''; }
+function cirHintFlash(txt){ var h=$('cirHint'); if(!h) return; h.textContent=txt; setTimeout(function(){ if(h.textContent===txt) h.textContent=''; },1600); }
+function cirToggleGhost(){
+  var btn=$('cirRec');
+  if(CIR.ghostOn){ CIR.ghostOn=false; CIR._ghostPath=null; cirClearGhost(); if(btn) btn.classList.remove('on'); return; }
+  CIR.ghostOn=true; if(btn) btn.classList.add('on');
+  var cc=S.s2||'lem';
+  var key=lbKey(CIR.modo, cc, String(CIR.laps));
+  var loc=loadLb(key).slice().filter(function(r){return r.path&&r.path.length;}).sort(function(a,b){return a.avg-b.avg;});
+  var best=loc[0]||null;
+  if(best){ CIR._ghostPath=best.path; cirDrawGhost(best.path); }
+  if(window.fbLoad){
+    window.fbLoad(CIR.modo, cc, String(CIR.laps)).then(function(rows){
+      if(!CIR.ghostOn||!rows) return;
+      rows=rows.filter(function(r){return r.path&&r.path.length;}).sort(function(a,b){return a.avg-b.avg;});
+      var fb=rows[0];
+      if(fb && (!best || fb.avg<best.avg)){ CIR._ghostPath=fb.path; cirDrawGhost(fb.path); }
+      else if(!best && !fb) cirHintFlash('sin r\u00e9cord a\u00fan');
+    }).catch(function(){ if(!best) cirHintFlash('sin r\u00e9cord a\u00fan'); });
+  } else if(!best) cirHintFlash('sin r\u00e9cord a\u00fan');
+}
 function cirLapDone(){
   cirSndLap();
   var t=cirNow(), lt=t-CIR.lapT0;
+  var _lf=lt + CIR.lapMm*CIR_PEN_PER_U*1000;
+  if(_lf < CIR.bestLapFull){ CIR.bestLapFull=_lf; CIR.bestLapPath=cirRDP(CIR.lapPathPts, 10); }
   CIR.lapTimes.push(lt); CIR.lapMmArr.push(CIR.lapMm); CIR.lapMm=0;
+  CIR.lapPathPts=[]; CIR.lapOffs=0;
   CIR.lapT0=t; CIR.crossCd=t; CIR.lap++;
   var i, pl;
   for(i=0;i<CIR.curLapPolys.length;i++){ pl=CIR.curLapPolys[i]; pl.setAttribute('stroke','#d2d2d2'); }
@@ -686,6 +748,7 @@ function cirFinishRace(){
   S.resTotal=totalMs;
   S.resEnsayos=CIR.laps;
   S.resBestLap=best; S.resOffs=CIR.offs; S.resMm=Math.round(CIR.mmOff);
+  S.resPath=CIR.bestLapPath ? cirFlatPath(CIR.bestLapPath) : null;
   S.saved=false;
   var gb=$('btnGuardar'); if(gb){ gb.disabled=false; gb.textContent='Guardar resultado'; }
   showSaveScreen();
@@ -732,6 +795,7 @@ function cirRaceStart(loc){
   CIR.racing=true; CIR.done=false; CIR.timing=false;
   CIR.wasOff=false; CIR.mmOff=0; CIR.offs=0; CIR.last=loc;
   CIR.lap=0; CIR.lapTimes=[]; CIR.lapMm=0; CIR.lapMmArr=[]; CIR.crossCd=cirNow();
+  CIR.lapOffs=0; CIR.lapPathPts=[]; CIR.bestLapPath=null; CIR.bestLapFull=Infinity;
   CIR.chkHit=[]; for(var i=0;i<CIR.chk.length;i++) CIR.chkHit.push(false);
   CIR.curLapPolys=[]; CIR.curPoly=null;
   if(CIR.trace) CIR.trace.textContent='';
@@ -749,7 +813,7 @@ function cirRaceMove(loc){
        ((loc.x-CIR.last.x)*CIR.fwd[0] + (loc.y-CIR.last.y)*CIR.fwd[1]) > 0){
       var _t=cirNow();
       CIR.timing=true; CIR.t0=_t; CIR.lapT0=_t; CIR.crossCd=_t;
-      CIR.mmOff=0; CIR.offs=0; CIR.lapMm=0; CIR.wasOff=false;
+      CIR.mmOff=0; CIR.offs=0; CIR.lapMm=0; CIR.wasOff=false; CIR.lapOffs=0; CIR.lapPathPts=[];
       var _i; CIR.chkHit=[]; for(_i=0;_i<CIR.chk.length;_i++) CIR.chkHit.push(false);
       if(CIR.trace) CIR.trace.textContent=''; CIR.curLapPolys=[];
       cirNewPoly(false); cirPush(loc.x,loc.y);
@@ -763,9 +827,14 @@ function cirRaceMove(loc){
   var dxx=loc.x-CIR.last.x, dyy=loc.y-CIR.last.y;
   var step=Math.sqrt(dxx*dxx+dyy*dyy);
   if(step<1.4) { cirCarTo(loc.x,loc.y); return; }   /* dedup: no acumules puntos casi quietos */
+  CIR.lapPathPts.push([loc.x,loc.y]);
   var r=cirNear(loc.x,loc.y);
   var off=(r.d - r.hw) > CIR.carR;                  /* el circulo entero fuera de la pista */
-  if(off && !CIR.wasOff){ CIR.offs++; var eo=$('cirOff'); if(eo) eo.textContent=CIR.offs; }
+  if(off && !CIR.wasOff){
+    CIR.offs++; var eo=$('cirOff'); if(eo) eo.textContent=CIR.offs;
+    CIR.lapOffs++;
+    if(CIR.modo==='lim' && CIR.lapOffs>=2){ cirCarTo(loc.x,loc.y); CIR.last=loc; cirAbort('l\u00edmite: 2\u00aa salida'); return; }
+  }
   if(off !== CIR.wasOff){ cirNewPoly(off); cirPush(CIR.last.x,CIR.last.y); }
   if(off){ CIR.mmOff += step; CIR.lapMm += step; }
   /* checkpoints: marca los que el coche roza */
@@ -822,6 +891,7 @@ function cirStart(){
   CIR.armed=false; CIR.racing=false; CIR.timing=false; CIR.done=false; CIR.falseStart=false;
   CIR.mmOff=0; CIR.offs=0; CIR.wasOff=false; CIR.last=null; CIR.curPoly=null;
   CIR.lap=0; CIR.lapTimes=[]; CIR.lapMm=0; CIR.lapMmArr=[]; CIR.chkHit=[]; CIR.curLapPolys=[]; CIR.crossCd=0;
+  CIR.lapOffs=0; CIR.lapPathPts=[]; CIR.bestLapPath=null; CIR.bestLapFull=Infinity;
   audioCtx();
   if(CIR.raf){ (window.cancelAnimationFrame||clearTimeout)(CIR.raf); CIR.raf=0; }
   var e;
@@ -909,7 +979,7 @@ function sortLb(lb){ lb.sort(function(a,b){ return MENOR_ES_MEJOR ? (a.avg-b.avg
 function saveScore(avg,total){
   var nm = S.sport ? (S.name+'-'+S.sport) : S.name;
   var rec={ s1:S.s1, s2:S.s2, s3:S.s3, name:nm, ensayos:S.resEnsayos, avg:Math.round(avg*100)/100, tt:Math.round(total), ts:Date.now(),
-            bestLap:(S.resBestLap||0), offs:(S.resOffs||0), mm:(S.resMm||0) };
+            bestLap:(S.resBestLap||0), offs:(S.resOffs||0), mm:(S.resMm||0), path:(S.resPath||null) };
   var k=lbKey(S.s1,S.s2,S.s3), lb=loadLb(k);
   lb.push(rec); sortLb(lb); lb=lb.slice(0,50);
   try{ localStorage.setItem(k,JSON.stringify(lb)); }catch(e){}
