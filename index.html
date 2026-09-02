@@ -258,9 +258,6 @@ if('serviceWorker' in navigator){
   .cir-lights.red i{background:radial-gradient(circle at 35% 30%,#ff5b4a,#d61f10);box-shadow:0 0 7px rgba(230,40,20,.85);}
   .cir-lights.go  i{background:radial-gradient(circle at 35% 30%,#5bff87,#12b23c);box-shadow:0 0 8px rgba(20,200,70,.85);}
   .cir-lights i.off{background:#360a08;box-shadow:inset 0 -2px 3px rgba(0,0,0,.6);}
-  .cir-rec{position:absolute;top:7px;right:7px;font-family:inherit;font-size:9.5px;font-weight:800;letter-spacing:0.06em;
-    text-transform:uppercase;padding:4px 9px;background:#f2f2f2;border:1.5px solid #bbb;border-radius:5px;color:#666;cursor:pointer;}
-  .cir-rec.on{background:#1769e0;border-color:#1769e0;color:#fff;}
   .cir-hint{position:absolute;left:0;right:0;bottom:9px;text-align:center;font-size:10px;font-weight:800;
     letter-spacing:0.08em;text-transform:uppercase;color:#888;}
 .cir-over{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
@@ -360,7 +357,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v10</div>
+    <div class="app-ver">v11</div>
     </div>
 
   </main>
@@ -383,7 +380,6 @@ if('serviceWorker' in navigator){
       <svg class="cir-svg" id="cirSvg" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet"></svg>
       <div class="cir-lights hidden" id="cirLights"><i></i><i></i><i></i><i></i><i></i></div>
       <div class="cir-hint" id="cirHint">Pon el dedo en la meta</div>
-      <button class="cir-rec" id="cirRec" onclick="cirToggleGhost()">R&#233;cord</button>
       <div class="cir-over hidden" id="cirOver"><div class="cir-over-box"><div class="cir-over-t" id="cirOverT">Partida terminada</div><div class="cir-over-r" id="cirOverR"></div><div class="cir-over-acts"><button type="button" class="cir-over-b rep" onclick="cirOverRepeat()">&#8635; Repetir</button><button type="button" class="cir-over-b home" onclick="cirOverHome()">Inicio</button></div></div></div>
     </div>
   <div class="results-actions">
