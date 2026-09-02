@@ -265,12 +265,17 @@ if('serviceWorker' in navigator){
     letter-spacing:0.08em;text-transform:uppercase;color:#888;}
 .cir-over{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     background:rgba(18,18,18,.62);z-index:5;padding:22px;}
+.cir-over.hidden{display:none;}
 .cir-over-box{background:#fff;border-radius:14px;border:2px solid #E63329;padding:18px 20px;
     max-width:82%;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.42);}
 .cir-over-t{font-size:14px;font-weight:900;color:#E63329;text-transform:uppercase;letter-spacing:0.04em;}
 .cir-over-r{margin-top:8px;font-size:10.5px;font-weight:800;color:#555;text-transform:uppercase;
     letter-spacing:0.06em;line-height:1.5;}
-.cir-over-s{margin-top:13px;font-size:9px;font-weight:800;color:#999;text-transform:uppercase;letter-spacing:0.12em;}
+.cir-over-acts{margin-top:14px;display:flex;gap:8px;}
+.cir-over-b{flex:1;border:none;border-radius:7px;padding:9px 6px;font-family:inherit;font-size:10px;font-weight:800;
+    text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;}
+.cir-over-b.rep{background:#1E9E4A;color:#fff;}
+.cir-over-b.home{background:#ececec;color:#444;border:1px solid #ccc;}
 </style>
 </head>
 <body class="home-active">
@@ -355,7 +360,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v8</div>
+    <div class="app-ver">v9</div>
     </div>
 
   </main>
@@ -379,7 +384,7 @@ if('serviceWorker' in navigator){
       <div class="cir-lights hidden" id="cirLights"><i></i><i></i><i></i><i></i><i></i></div>
       <div class="cir-hint" id="cirHint">Pon el dedo en la meta</div>
       <button class="cir-rec" id="cirRec" onclick="cirToggleGhost()">R&#233;cord</button>
-      <div class="cir-over hidden" id="cirOver"><div class="cir-over-box"><div class="cir-over-t">Fuera de pista</div><div class="cir-over-r" id="cirOverR"></div><div class="cir-over-s">Toca para volver</div></div></div>
+      <div class="cir-over hidden" id="cirOver"><div class="cir-over-box"><div class="cir-over-t" id="cirOverT">Partida terminada</div><div class="cir-over-r" id="cirOverR"></div><div class="cir-over-acts"><button type="button" class="cir-over-b rep" onclick="cirOverRepeat()">&#8635; Repetir</button><button type="button" class="cir-over-b home" onclick="cirOverHome()">Inicio</button></div></div></div>
     </div>
   <div class="results-actions">
     <button class="game-ctrl-btn" onclick="goHome()">&#8592; Inicio</button>
@@ -690,9 +695,9 @@ function cirDrawGhost(flat){
   g.textContent='';
   var pl=document.createElementNS('http://www.w3.org/2000/svg','polyline');
   pl.setAttribute('fill','none'); pl.setAttribute('stroke','#1769e0');
-  pl.setAttribute('stroke-width',((CIR.trackW||30)*0.22).toFixed(1));
+  pl.setAttribute('stroke-width',((CIR.trackW||30)*0.5).toFixed(1));
   pl.setAttribute('stroke-linecap','round'); pl.setAttribute('stroke-linejoin','round');
-  pl.setAttribute('opacity','0.9');
+  pl.setAttribute('opacity','1');
   var pts=''; for(var i=0;i+1<flat.length;i+=2) pts+=(i?' ':'')+flat[i]+','+flat[i+1];
   pl.setAttribute('points',pts); g.appendChild(pl);
 }
@@ -926,7 +931,7 @@ function cirRaceMove(loc){
   if(off && !CIR.wasOff){
     CIR.offs++; var eo=$('cirOff'); if(eo) eo.textContent=CIR.offs;
     CIR.lapOffs++;
-    if(CIR.modo==='lim' && CIR.lapOffs>=2){ cirCarTo(loc.x,loc.y); CIR.last=loc; cirLimOut(); return; }
+    if(CIR.modo==='lim' && CIR.lapOffs>=2){ cirCarTo(loc.x,loc.y); CIR.last=loc; cirEndOver('Fuera de pista', '2\u00aa salida de pista en la misma vuelta'); return; }
   }
   if(off !== CIR.wasOff){ cirNewPoly(off); cirPush(CIR.last.x,CIR.last.y); }
   if(off){ CIR.mmOff += step; CIR.lapMm += step; }
@@ -956,25 +961,18 @@ function cirRaceEnd(){
       return;   /* NO anula: es la mecanica del obstaculo */
     }
   }
-  cirAbort('has soltado el dedo');
+  cirEndOver('Has levantado el dedo', 'Soltar el dedo durante la vuelta termina la partida');
 }
-function cirAbort(why){
-  CIR.armed=false; CIR.racing=false; CIR.done=true; CIR.pid=null;
-  cirSndAbort();
-  var h=$('cirHint'); if(h) h.textContent='PARTIDA ANULADA'+(why?' ('+why+')':'');
-  setTimeout(function(){ goHome(); }, 900);
-}
-function cirLimOut(){
+function cirEndOver(title, reason){
   CIR.armed=false; CIR.racing=false; CIR.done=true; CIR.pid=null;
   cirSndAbort();
   var h=$('cirHint'); if(h) h.textContent='';
-  var r=$('cirOverR'); if(r) r.innerHTML='2\u00aa salida en la misma vuelta<br>fin de la partida';
-  var o=$('cirOver'); if(o){
-    o.classList.remove('hidden');
-    var go=function(ev){ if(ev) ev.stopPropagation(); o.classList.add('hidden'); o.removeEventListener('pointerdown', go); goHome(); };
-    o.addEventListener('pointerdown', go);
-  }
+  var t=$('cirOverT'); if(t) t.textContent=title;
+  var r=$('cirOverR'); if(r) r.textContent=reason;
+  var o=$('cirOver'); if(o) o.classList.remove('hidden');
 }
+function cirOverHome(){ var o=$('cirOver'); if(o) o.classList.add('hidden'); goHome(); }
+function cirOverRepeat(){ var o=$('cirOver'); if(o) o.classList.add('hidden'); repeatGame(); }
 function cirWire(){
   var felt=$('cirFelt'); if(!felt || felt.__cw) return; felt.__cw=1;
   felt.addEventListener('pointerdown', function(ev){
@@ -1009,7 +1007,7 @@ function cirWire(){
   felt.addEventListener('pointercancel', up);
 }
 document.addEventListener('visibilitychange', function(){
-  if(document.hidden && (CIR.racing||CIR.armed) && $('cirSvg')) cirAbort('foco');
+  if(document.hidden && (CIR.racing||CIR.armed) && $('cirSvg')) cirEndOver('Partida interrumpida', 'Has salido de la app');
 });
 function cirStart(){
   CIR.code='LEM';
@@ -1054,7 +1052,7 @@ function renderChart(times){
   var box=$('resChart'); if(!box) return;
   var n=times.length; if(n===0){ box.innerHTML=''; return; }
   var W=320,H=132,padL=12,padR=12,padT=12,padB=22;
-  var min=Math.min.apply(null,times), max=Math.max.apply(null,times), span=(max-min)||1;
+  var min=0, max=Math.max.apply(null,times)||1, span=max;   /* eje vertical desde 0 */
   var pw=W-padL-padR, ph=H-padT-padB, base=padT+ph, i;
   function X(i){ return n===1?padL+pw/2:padL+(i/(n-1))*pw; }
   function Y(v){ return padT+(1-(v-min)/span)*ph; }
@@ -1066,6 +1064,8 @@ function renderChart(times){
   var s='<svg viewBox="0 0 '+W+' '+H+'">';
   s+='<path d="'+area+'" fill="rgba(162,58,41,0.10)" stroke="none"/>';
   s+='<polyline points="'+poly+'" fill="none" stroke="#A23A29" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+  s+='<line x1="'+padL+'" y1="'+base.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+base.toFixed(1)+'" stroke="#bdbdbd" stroke-width="1"/>';
+  s+='<text x="'+(padL-3)+'" y="'+(base+3).toFixed(1)+'" text-anchor="end" font-family="Arial" font-size="8" fill="#9A9A9A">0</text>';
   var step=n<=12?1:5;
   for(i=0;i<n;i++){
     if(i===0||i===n-1||((i+1)%step)===0){
