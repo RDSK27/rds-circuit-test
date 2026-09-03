@@ -321,7 +321,7 @@ if('serviceWorker' in navigator){
       </div>
   <div id="user-name-bar">
     <div style="display:flex;width:200px;gap:0;margin:0 auto;">
-      <input id="user-ini-input" type="text" maxlength="3" placeholder="INI"
+      <input id="user-ini-input" type="text" maxlength="3" placeholder="INI" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done"
         style="width:100px;flex:none;padding:7px 4px;border:2px solid #b03020;border-radius:4px 0 0 0;border-right:none;font-size:0.8rem;font-family:Arial,sans-serif;text-align:center;color:#111;background:#fff;outline:none;box-sizing:border-box;"
         oninput="filterInitials(this)">
       <select id="user-sport-select"
@@ -358,7 +358,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v15</div>
+    <div class="app-ver">v16</div>
     </div>
 
   </main>
@@ -1372,5 +1372,35 @@ window.fbLoad=async function(s1,s2,s3){
 <div id="transition-overlay">
   <div id="transition-text">Ejercicio finalizado</div>
 </div>
+<script>
+/* iOS: al cerrar el teclado devuelve la pantalla abajo -> evita que se quede subida
+   y que los botones no respondan por "scroll fantasma". Comun a todas las apps. */
+(function(){
+  if(typeof document==='undefined' || !document.addEventListener) return;
+  function resetScroll(){
+    try{
+      if(window.scrollY || window.pageYOffset || document.documentElement.scrollTop){ window.scrollTo(0,0); }
+      document.documentElement.scrollTop=0; if(document.body) document.body.scrollTop=0;
+    }catch(e){}
+  }
+  document.addEventListener('focusout', function(e){
+    var t=e.target;
+    if(t && (t.tagName==='INPUT' || t.tagName==='SELECT' || t.tagName==='TEXTAREA')){
+      setTimeout(resetScroll,60); setTimeout(resetScroll,300);
+    }
+  });
+  if(window.visualViewport){
+    var vv=window.visualViewport, base=vv.height;
+    vv.addEventListener('resize', function(){
+      if(vv.height >= base-2) resetScroll();
+      if(vv.height > base) base=vv.height;
+    });
+  }
+  if(window.addEventListener){
+    window.addEventListener('orientationchange', function(){ setTimeout(resetScroll,120); setTimeout(resetScroll,400); });
+    window.addEventListener('pageshow', function(){ setTimeout(resetScroll,0); });
+  }
+})();
+</script>
 </body>
 </html>
