@@ -1,5 +1,5 @@
 /* RDS Circuit - Service Worker */
-var CACHE = 'circuit-v19';
+var CACHE = 'circuit-v20';
 var ASSETS = [
   './',
   './index.html',
