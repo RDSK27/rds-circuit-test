@@ -368,7 +368,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v23</div>
+    <div class="app-ver">v24</div>
     </div>
 
   </main>
@@ -604,8 +604,9 @@ var CIR_WIDEN = 2.4;      /* ancho de pista respecto al dibujo (a afinar en devi
 var CIR_CARFRAC = 0.55;   /* radio del coche = fraccion del semiancho ensanchado   */
 var CIR_PEN_PER_U = 0.05; /* segundos de penalizacion por unidad de traza fuera de pista (a afinar en device) */
 var CIR_OBST_LEAD = 300;  /* a que distancia (unidades del viewBox) por delante del coche aparece la raya del obstaculo */
+var CIR_CAR_BACK = 1.6;   /* posicion de reposo del coche (antes de tocar): cuantos radios de coche por DETRAS de la raya de meta (pedido expreso, 2026-09-28: antes salia justo encima de la raya) */
 var CIR = { code:'LEM', pts:[], hw:[], box:[1000,620], start:0, chk:[], trackW:0, carR:0, laps:3, modo:'nor',
-  armed:false, racing:false, timing:false, done:false, t0:0, raf:0, falseStart:false,
+  armed:false, racing:false, timing:false, lap1Started:false, done:false, t0:0, raf:0, falseStart:false,
   trace:null, curPoly:null, wasOff:false, last:null, mmOff:0, offs:0,
   lap:0, lapT0:0, lapTimes:[], lapMm:0, lapMmArr:[], chkHit:[], curLapPolys:[], metaA:null, metaB:null, fwd:null, crossCd:0,
   lapOffs:0, lapPathPts:[], bestLapPath:null, bestLapFull:Infinity, ghostOn:false, ghostG:null, _ghostPath:null,
@@ -662,16 +663,27 @@ function cirRender(){
     '<g id="cirGhost"></g>'+
     '<g id="cirObst"></g>'+
     '<g id="cirTrace"></g>'+
-    '<circle id="cirCar" cx="'+a[0]+'" cy="'+a[1]+'" r="'+CIR.carR.toFixed(1)+'" fill="#e63329" stroke="#111" stroke-width="1.6"/>';
+    '<circle id="cirCar" cx="'+(a[0]-dx*CIR.carR*CIR_CAR_BACK).toFixed(1)+'" cy="'+(a[1]-dy*CIR.carR*CIR_CAR_BACK).toFixed(1)+'" r="'+CIR.carR.toFixed(1)+'" fill="#e63329" stroke="#111" stroke-width="1.6"/>';
   CIR.trace=svg.querySelector('#cirTrace');
   CIR.ghostG=svg.querySelector('#cirGhost');
   CIR.obstG=svg.querySelector('#cirObst');
   if(CIR.ghostOn && CIR._ghostPath) cirDrawGhost(CIR._ghostPath);
   CIR.metaA=[a[0]-nx*mw, a[1]-ny*mw]; CIR.metaB=[a[0]+nx*mw, a[1]+ny*mw]; CIR.fwd=[dx,dy];
 }
+/* Arranca el crono (CIR.timing/t0/lapT0) en cuanto se pone el verde, no al
+   cruzar la meta (pedido expreso, 2026-09-28: antes el reloj esperaba a que
+   el dedo cruzara la raya, asi que remolonear tras la cuenta atras no
+   penalizaba nada). cirTick() se arranca aqui una sola vez; el cruce de
+   meta (cirRaceMove) ya NO toca t0/lapT0, solo marca CIR.lap1Started para
+   iniciar el trazado. */
+function cirArmTiming(){
+  var _t=cirNow();
+  CIR.timing=true; CIR.t0=_t; CIR.lapT0=_t; CIR.crossCd=_t;
+  cirTick();
+}
 function cirLights(){
   var el=$('cirLights'), h=$('cirHint');
-  if(!el){ CIR.armed=true; return; }
+  if(!el){ CIR.armed=true; cirArmTiming(); return; }
   el.className='cir-lights red';
   el.innerHTML='<i></i><i></i><i></i><i></i><i></i>';
   var L=el.querySelectorAll('i'), i;
@@ -684,6 +696,7 @@ function cirLights(){
     cirSndGo();
     if(h) h.textContent='Cruza la meta y traza';
     CIR.armed=true;
+    cirArmTiming();
     setTimeout(function(){ if(el) el.className='cir-lights hidden'; }, 800);
   }, 2600);
 }
@@ -910,7 +923,10 @@ function cirPush(x,y){
   CIR.curPoly.points.appendItem(p);
 }
 function cirRaceStart(loc){
-  CIR.racing=true; CIR.done=false; CIR.timing=false;
+  /* CIR.timing NO se toca aqui: el crono corre desde el verde (cirArmTiming),
+     no desde que se coloca el dedo -- colocar el dedo tarde, ya en verde, no
+     debe reiniciar ni parar un reloj que ya estaba corriendo. */
+  CIR.racing=true; CIR.done=false;
   CIR.wasOff=false; CIR.mmOff=0; CIR.offs=0; CIR.last=loc;
   CIR.lap=0; CIR.lapTimes=[]; CIR.lapMm=0; CIR.lapMmArr=[]; CIR.crossCd=cirNow();
   CIR.lapOffs=0; CIR.lapPathPts=[]; CIR.bestLapPath=null; CIR.bestLapFull=Infinity;
@@ -928,12 +944,13 @@ function cirRaceMove(loc){
   if(!CIR.last) { CIR.last=loc; return; }
   /* antes del verde: el coche sigue al dedo, sin puntuar */
   if(!CIR.armed){ cirCarTo(loc.x,loc.y); CIR.last=loc; return; }
-  /* verde pero aun sin cruzar meta: arranca crono+traza al primer cruce hacia delante */
-  if(!CIR.timing){
+  /* verde pero aun sin cruzar meta: el crono ya corre desde el verde
+     (cirArmTiming, en cirLights); aqui solo arranca el trazado/vuelta 1
+     al primer cruce hacia delante. */
+  if(!CIR.lap1Started){
     if(CIR.metaA && cirSegInt(CIR.last,loc,CIR.metaA,CIR.metaB) &&
        ((loc.x-CIR.last.x)*CIR.fwd[0] + (loc.y-CIR.last.y)*CIR.fwd[1]) > 0){
-      var _t=cirNow();
-      CIR.timing=true; CIR.t0=_t; CIR.lapT0=_t; CIR.crossCd=_t;
+      CIR.lap1Started=true; CIR.crossCd=cirNow();
       CIR.mmOff=0; CIR.offs=0; CIR.lapMm=0; CIR.wasOff=false; CIR.lapOffs=0; CIR.lapPathPts=[]; CIR.reactRTs=[]; CIR.lapHits=[]; CIR.waitingResume=null;
       for(var _o2=0;_o2<CIR.obst.length;_o2++){ CIR.obst[_o2].active=false; CIR.obst[_o2].done=false; } cirClearObst();
       var _i; CIR.chkHit=[]; for(_i=0;_i<CIR.chk.length;_i++) CIR.chkHit.push(false);
@@ -942,7 +959,7 @@ function cirRaceMove(loc){
       var _eo=$('cirOff'); if(_eo) _eo.textContent='0';
       var _lp=$('cirLap'); if(_lp) _lp.textContent='1 / '+CIR.laps;
       var _h=$('cirHint'); if(_h) _h.textContent='';
-      cirSndLap(); cirTick();
+      cirSndLap();
     }
     cirCarTo(loc.x,loc.y); CIR.last=loc; return;
   }
@@ -1056,7 +1073,7 @@ function cirStart(){
   CIR.code=(S.s2||'lem').toUpperCase(); if(!CIR_DATA[CIR.code]) CIR.code='LEM';
   CIR.modo=S.s1||'nor';
   CIR.laps=parseInt(S.s3,10)||3;
-  CIR.armed=false; CIR.racing=false; CIR.timing=false; CIR.done=false; CIR.falseStart=false;
+  CIR.armed=false; CIR.racing=false; CIR.timing=false; CIR.lap1Started=false; CIR.done=false; CIR.falseStart=false;
   CIR.mmOff=0; CIR.offs=0; CIR.wasOff=false; CIR.last=null; CIR.curPoly=null;
   CIR.lap=0; CIR.lapTimes=[]; CIR.lapMm=0; CIR.lapMmArr=[]; CIR.chkHit=[]; CIR.curLapPolys=[]; CIR.crossCd=0;
   CIR.lapOffs=0; CIR.lapPathPts=[]; CIR.bestLapPath=null; CIR.bestLapFull=Infinity;
