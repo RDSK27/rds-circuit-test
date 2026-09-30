@@ -368,7 +368,7 @@ if('serviceWorker' in navigator){
       </select>
     </div>
   </div>
-    <div class="app-ver">v32</div>
+    <div class="app-ver">v33</div>
     </div>
 
   </main>
@@ -500,7 +500,7 @@ var MENOR_ES_MEJOR = true;
 var UNIDAD = 's';
 
 function $(id){ return document.getElementById(id); }
-function show(id){
+function show(id){ if(id!=='ranking' && typeof stopRankWatch==='function') stopRankWatch();
   var s=document.querySelectorAll('.screen');
   for(var i=0;i<s.length;i++) s[i].classList.remove('active');
   $(id).classList.add('active');
@@ -582,7 +582,7 @@ function startGame(){
   runGame();
 }
 function repeatGame(){ runGame(); }
-function runGame(){
+function runGame(){ try{ warmRank(S.s1,S.s2,S.s3); }catch(e){}
   show('game');
   cirStart();
 }
@@ -1301,9 +1301,43 @@ function cirLapLocal(v1,v2){
   for(i=0;i<L.length;i++){ arr=loadLb('rds_circ_'+v1+'_'+v2+'_'+L[i]); for(j=0;j<arr.length;j++) out.push(arr[j]); }
   return out;
 }
+/* Ranking (2026-09-30): lo que se ve es SIEMPRE la union de (a) el ranking
+   global -- en directo si hay red (onSnapshot: si otro deportista sube al
+   primer puesto se ve al momento, sin salir y volver a entrar), o la ultima
+   copia guardada si no la hay -- y (b) las marcas de ESTE dispositivo
+   (incluidas las aun pendientes de subir). Asi, sin conexion, se ve donde
+   queda tu marca dentro del ranking que ya conocias; al volver la red, la
+   cola de pendientes las sube y el global las incluye (se deduplican por
+   nombre+fecha). */
+var rankUnsub=null;
+function stopRankWatch(){ if(rankUnsub){ try{ rankUnsub(); }catch(e){} rankUnsub=null; } }
+function mergeRank(globalRows,localRows){
+  var out=[], seen={};
+  (globalRows||[]).concat(localRows||[]).forEach(function(r){
+    var k=(r.name||'')+'|'+r.ts;
+    if(!seen[k]){ seen[k]=1; out.push(r); }
+  });
+  return out;
+}
+function rankCacheKey(){ return 'rds_circ_rankcache_'+Array.prototype.join.call(arguments,'_'); }
+function loadRankCache(k){ try{ return JSON.parse(localStorage.getItem(k)||'null'); }catch(e){ return null; } }
+function saveRankCache(k,rows){
+  rows=rows.map(function(r){ var c={}; for(var p in r){ if(p!=='path') c[p]=r[p]; } return c; });   // el recorrido (path) es enorme y aqui no se usa
+  try{ localStorage.setItem(k, JSON.stringify(rows)); localStorage.setItem(k+'_ts', String(Date.now())); }catch(e){}
+}
+/* Precarga: al empezar un ejercicio con red, se guarda el ranking de ESA
+   combinacion (1 consulta, como mucho cada 30 min) para verlo luego sin
+   conexion. */
+function warmRank(a,b,c){
+  if(!window.fbLoad || !navigator.onLine) return;
+  var rcKey=rankCacheKey(a,b,c), t=0;
+  try{ t=+localStorage.getItem(rcKey+'_ts')||0; }catch(e){}
+  if(Date.now()-t < 30*60*1000) return;
+  window.fbLoad(a,b,c).then(function(rows){ if(rows){ saveRankCache(rcKey, rows); } }).catch(function(){});
+}
 function renderRank(v1,v2,v3){
   var lapMode=(v3==='1');
-  var key=lapMode ? ('rds_circ_'+v1+'_'+v2+'_best') : lbKey(v1,v2,v3);
+  var key=lapMode ? ('rds_circ_'+v1+'_'+v2+'_best') : lbKey(v1,v2,v3); stopRankWatch();
   S.rankKey=key;
   var el=$('rkList'); if(!el) return;
   var latest=null;
@@ -1318,16 +1352,21 @@ function renderRank(v1,v2,v3){
     }
   }
   var lbLocal = lapMode ? cirLapLocal(v1,v2).map(function(e){return cirRemapLap(e,rtMode);}).filter(function(e){return e.avg>0;}) : loadLb(key);
-  sortLb(lbLocal);
-  renderRankList(lbLocal, el, latest, lapMode);
-  if(window.fbLoad){
-    window.fbLoad(v1,v2,v3).then(function(rows){
-      if(rows && S.rankKey===key){
-        if(lapMode) rows=rows.map(function(e){return cirRemapLap(e,rtMode);}).filter(function(e){return e.avg>0;});
-        sortLb(rows);
-        renderRankList(rows, el, latest, lapMode);
-      }
-    }).catch(function(){});
+  var rcKey=rankCacheKey(v1,v2,v3);
+  function draw(raw){
+    var rows=raw;
+    if(lapMode) rows=rows.map(function(e){return cirRemapLap(e,rtMode);}).filter(function(e){return e.avg>0;});
+    rows=mergeRank(rows,lbLocal);
+    sortLb(rows);
+    renderRankList(rows, el, latest, lapMode);
+  }
+  draw(loadRankCache(rcKey)||[]);
+  if(window.fbWatch){
+    rankUnsub=window.fbWatch(v1,v2,v3,function(rows){
+      if(S.rankKey!==key) return;
+      saveRankCache(rcKey, rows);
+      draw(rows);
+    });
   }
 }
 
@@ -1402,7 +1441,7 @@ document.addEventListener('click', function(e){ if(e.target.closest && e.target.
 </script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 const firebaseConfig = {
   apiKey: "AIzaSyBbEgbWddPt_rhPM24bL_Nacp7TAlh1biM",
   authDomain: "rds-reaction-test.firebaseapp.com",
@@ -1428,6 +1467,17 @@ window.fbReady=!!db;
 window.fbSave=async function(rec){
   if(!db) return false;
   try{ await addDoc(collection(db,'scores_circuit'), rec); return true; }catch(e){ return false; }
+};
+window.fbWatch=function(s1,s2,s3,cb){
+  if(!db) return null;
+  try{
+    let q; if(s3==='1') q=query(collection(db,'scores_circuit'), where('s1','==',s1), where('s2','==',s2)); else q=query(collection(db,'scores_circuit'), where('s1','==',s1), where('s2','==',s2), where('s3','==',s3));
+    return onSnapshot(q, function(snap){
+      if(snap.metadata.fromCache) return;   // sin servidor no hay datos reales: no pisar la copia guardada
+      const out=[]; snap.forEach(function(d){ out.push(d.data()); });
+      cb(out);
+    }, function(){});
+  }catch(e){ return null; }
 };
 window.fbLoad=async function(s1,s2,s3){
   if(!db) return null;
